@@ -1,11 +1,12 @@
 package main
 
 import (
-	authservice "auth/AuthService"
-	apex "auth/protos/v1"
 	"context"
 	"log"
 	"net"
+
+	authservice "github.com/centodiechi/Auth/AuthService"
+	apex "github.com/centodiechi/Auth/protos/v1"
 
 	"net/http"
 

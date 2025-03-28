@@ -1,10 +1,11 @@
 package authservice
 
 import (
-	apex "auth/protos/v1"
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	apex "github.com/centodiechi/Auth/protos/v1"
 
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/net/context"

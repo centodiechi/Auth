@@ -1,13 +1,14 @@
 package authservice
 
 import (
-	apex "auth/protos/v1"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
+
+	apex "github.com/centodiechi/Auth/protos/v1"
 
 	redis "github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
