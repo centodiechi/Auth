@@ -7,6 +7,7 @@ import (
 
 	authservice "github.com/centodiechi/Auth/AuthService"
 	apex "github.com/centodiechi/Auth/protos/v1"
+	"github.com/go-chi/cors"
 
 	"net/http"
 
@@ -89,6 +90,12 @@ func startGRPCServer(authSvc *authservice.AuthSvc) {
 
 func startHTTPServer(authSvc *authservice.AuthSvc) {
 	router := chi.NewRouter()
+	router.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		AllowCredentials: true,
+	}))
 	httpServer := authservice.NewHTTPServer(authSvc)
 	router.Mount("/", httpServer.Routes())
 
