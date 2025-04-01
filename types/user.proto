@@ -7,9 +7,10 @@ option go_package = "./v1";
 service AuthService {
     rpc Signup(SignupRequest) returns (SignupResponse);
     rpc Login(LoginRequest) returns (LoginResponse);
-    rpc VerifyToken(VerifyTokenRequest) returns (VerifyTokenResponse);
-    rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse); 
+    rpc Logout(LogoutRequest) returns (Empty);
 }
+
+message Empty {}
 
 message SignupRequest {
     string name = 1;
@@ -34,19 +35,6 @@ message LoginResponse {
     string refresh_token = 3;
 }
 
-message VerifyTokenRequest {
-    string token = 1;
-}
-
-message VerifyTokenResponse {
-    bool valid = 1;
-    string user_id = 2;
-}
-
-message RefreshTokenRequest {
-    string refresh_token = 1;
-}
-
-message RefreshTokenResponse {
-    string access_token = 1;
+message LogoutRequest {
+    string user_id = 1;
 }
