@@ -68,13 +68,13 @@ func (s *HTTPServer) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.AuthService.Logout(context.Background(), userID); err != nil {
+	if _, err := s.AuthService.Logout(context.Background(), &apex.LogoutRequest{UserId: userID}); err != nil {
 		http.Error(w, "failed to logout", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "logged out successfully"})
+	json.NewEncoder(w).Encode([]byte{})
 }
 
 func (s *HTTPServer) VerifyHandler(w http.ResponseWriter, r *http.Request) {

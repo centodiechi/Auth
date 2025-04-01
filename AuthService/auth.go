@@ -96,15 +96,16 @@ func (auth *AuthSvc) Login(ctx context.Context, req *apex.LoginRequest) (*apex.L
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
-
+	aToken := Token{UserID: user.UserID, TokenType: "access", Token: accessToken, TTL: time.Now().Add(15 * time.Minute)}
+	auth.DB.Save(&aToken)
 	auth.RedisClient.Set(ctx, fmt.Sprintf("accesstoken/%s", user.UserID), accessToken, 15*time.Minute)
 
 	return &apex.LoginResponse{UserId: user.UserID, AccessToken: accessToken, RefreshToken: refreshToken.Token}, nil
 }
 
-func (auth *AuthSvc) Logout(ctx context.Context, userID string) error {
+func (auth *AuthSvc) Logout(ctx context.Context, userID *apex.LogoutRequest) (*apex.Empty, error) {
 	auth.RedisClient.Del(ctx, fmt.Sprintf("accesstoken/%s", userID))
-	return auth.DB.Where("user_id = ?", userID).Delete(&Token{}).Error
+	return &apex.Empty{}, auth.DB.Where("user_id = ? AND token_type = ?", userID, "access").Delete(&Token{}).Error
 }
 
 func (auth *AuthSvc) getNextHexID(ctx context.Context, key string) (string, error) {
