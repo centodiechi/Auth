@@ -23,19 +23,41 @@ type User struct {
 	CreatedAt time.Time
 }
 
-type Token struct {
-	ID        uint   `gorm:"primaryKey"`
-	UserID    string `gorm:"index"`
-	TokenType string `gorm:"index"`
-	Token     string `gorm:"unique"`
-	CreatedAt time.Time
-	TTL       time.Time
-}
-
 type AuthSvc struct {
 	apex.UnimplementedAuthServiceServer
 	RedisClient *redis.Client
 	DB          *gorm.DB
+}
+
+func (auth *AuthSvc) cacheUser(ctx context.Context, user *User) error {
+	userData := map[string]interface{}{
+		"user_id":  user.UserID,
+		"name":     user.Name,
+		"email":    user.Email,
+		"password": user.Password,
+	}
+
+	key := fmt.Sprintf("user/%s", user.Email)
+	return auth.RedisClient.HSet(ctx, key, userData).Err()
+}
+
+func (auth *AuthSvc) getUserFromCache(ctx context.Context, email string) (*User, error) {
+	key := fmt.Sprintf("user/%s", email)
+	userData, err := auth.RedisClient.HGetAll(ctx, key).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(userData) == 0 {
+		return nil, redis.Nil
+	}
+
+	return &User{
+		UserID:   userData["user_id"],
+		Name:     userData["name"],
+		Email:    userData["email"],
+		Password: userData["password"],
+	}, nil
 }
 
 func (auth *AuthSvc) Signup(ctx context.Context, req *apex.SignupRequest) (*apex.SignupResponse, error) {
@@ -59,6 +81,8 @@ func (auth *AuthSvc) Signup(ctx context.Context, req *apex.SignupRequest) (*apex
 		return nil, fmt.Errorf("error inserting user: %w", err)
 	}
 
+	auth.cacheUser(ctx, &user)
+
 	return &apex.SignupResponse{
 		UserId: userID,
 		Name:   req.Name,
@@ -67,45 +91,39 @@ func (auth *AuthSvc) Signup(ctx context.Context, req *apex.SignupRequest) (*apex
 }
 
 func (auth *AuthSvc) Login(ctx context.Context, req *apex.LoginRequest) (*apex.LoginResponse, error) {
-	var user User
-	result := auth.DB.Where("email = ?", req.Email).First(&user)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, errors.New("invalid email or password")
+	user, err := auth.getUserFromCache(ctx, req.Email)
+
+	if err == redis.Nil {
+		user = &User{}
+		result := auth.DB.Where("email = ?", req.Email).First(user)
+		if result.Error != nil {
+			if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+				return nil, errors.New("invalid email or password")
+			}
+			return nil, fmt.Errorf("database error: %w", result.Error)
 		}
-		return nil, fmt.Errorf("database error: %w", result.Error)
+		auth.cacheUser(ctx, user)
+	} else if err != nil {
+		return nil, fmt.Errorf("cache error: %w", err)
 	}
 
 	if hashPassword(req.Password) != user.Password {
 		return nil, errors.New("invalid email or password")
 	}
 
-	var refreshToken Token
-	auth.DB.Where("user_id = ? AND token_type = ?", user.UserID, "refresh").First(&refreshToken)
-
-	if refreshToken.Token == "" || time.Now().After(refreshToken.TTL) {
-		newRefreshToken, err := middleware.GenerateRefreshToken(user.UserID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate refresh token: %w", err)
-		}
-		refreshToken = Token{UserID: user.UserID, TokenType: "refresh", Token: newRefreshToken, TTL: time.Now().Add(24 * time.Hour)}
-		auth.DB.Save(&refreshToken)
-	}
-
-	accessToken, err := middleware.GenerateAccessToken(user.UserID, refreshToken.Token)
+	accessToken, err := middleware.GenerateAccessToken(user.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
-	aToken := Token{UserID: user.UserID, TokenType: "access", Token: accessToken, TTL: time.Now().Add(15 * time.Minute)}
-	auth.DB.Save(&aToken)
-	auth.RedisClient.Set(ctx, fmt.Sprintf("accesstoken/%s", user.UserID), accessToken, 15*time.Minute)
 
-	return &apex.LoginResponse{UserId: user.UserID, AccessToken: accessToken, RefreshToken: refreshToken.Token}, nil
+	return &apex.LoginResponse{
+		UserId:      user.UserID,
+		AccessToken: accessToken,
+	}, nil
 }
 
-func (auth *AuthSvc) Logout(ctx context.Context, userID *apex.LogoutRequest) (*apex.Empty, error) {
-	auth.RedisClient.Del(ctx, fmt.Sprintf("accesstoken/%s", userID))
-	return &apex.Empty{}, auth.DB.Where("user_id = ? AND token_type = ?", userID, "access").Delete(&Token{}).Error
+func (auth *AuthSvc) Logout(ctx context.Context, req *apex.LogoutRequest) (*apex.Empty, error) {
+	return &apex.Empty{}, nil
 }
 
 func (auth *AuthSvc) getNextHexID(ctx context.Context, key string) (string, error) {

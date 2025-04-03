@@ -85,5 +85,5 @@ func (s *HTTPServer) VerifyHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"message": "token is valid"})
+	json.NewEncoder(w).Encode()
 }

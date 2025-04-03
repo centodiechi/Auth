@@ -42,7 +42,7 @@ func initPostgres() {
 		log.Fatalf("❌ Failed to connect to PostgreSQL: %v", err)
 	}
 
-	if err := DB.AutoMigrate(&authservice.User{}, &authservice.Token{}); err != nil {
+	if err := DB.AutoMigrate(&authservice.User{}); err != nil {
 		log.Fatalf("❌ Failed to migrate database: %v", err)
 	}
 

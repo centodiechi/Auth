@@ -1,40 +1,48 @@
-syntax="proto3";
-
-package types;
+syntax = "proto3";
+package apex.auth;
 
 option go_package = "./v1";
 
 service AuthService {
-    rpc Signup(SignupRequest) returns (SignupResponse);
-    rpc Login(LoginRequest) returns (LoginResponse);
-    rpc Logout(LogoutRequest) returns (Empty);
+  rpc Signup(SignupRequest) returns (SignupResponse);
+  rpc Login(LoginRequest) returns (LoginResponse);
+  rpc Logout(LogoutRequest) returns (Empty);
+  rpc VerifyToken(VerifyTokenRequest) returns (VerifyTokenResponse);
 }
 
-message Empty {}
-
 message SignupRequest {
-    string name = 1;
-    string email = 2;
-    string password = 3;
+  string name = 1;
+  string email = 2;
+  string password = 3;
 }
 
 message SignupResponse {
-    string user_id = 1;
-    string name = 2;
-    string email = 3; 
+  string user_id = 1;
+  string name = 2;
+  string email = 3;
 }
 
 message LoginRequest {
-    string email = 1;
-    string password = 2;
+  string email = 1;
+  string password = 2;
 }
 
 message LoginResponse {
-    string user_id = 1;
-    string access_token = 2;
-    string refresh_token = 3;
+  string user_id = 1;
+  string access_token = 2;
 }
 
 message LogoutRequest {
-    string user_id = 1;
+  string user_id = 1;
 }
+
+message VerifyTokenRequest {
+  string token = 1;
+}
+
+message VerifyTokenResponse {
+  bool valid = 1;
+  string user_id = 2;
+}
+
+message Empty {}
