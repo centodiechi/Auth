@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -26,7 +27,13 @@ func GenerateAccessToken(userID string) (string, error) {
 		"iat":     time.Now().Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString(secretKey)
+	tokenString, err := token.SignedString(secretKey)
+	if err != nil {
+		return "", err
+	}
+
+	encodedToken := base64.StdEncoding.EncodeToString([]byte(tokenString))
+	return encodedToken, nil
 }
 
 func HashToken(tokenString string) string {
@@ -36,7 +43,12 @@ func HashToken(tokenString string) string {
 
 func ExtractTokenFromHeader(r *http.Request) string {
 	tokenStr := r.Header.Get("Authorization")
-	return strings.TrimPrefix(tokenStr, "Bearer ")
+	encodedToken := strings.TrimPrefix(tokenStr, "Bearer ")
+	decodedBytes, err := base64.StdEncoding.DecodeString(encodedToken)
+	if err != nil {
+		return encodedToken
+	}
+	return string(decodedBytes)
 }
 
 func VerifyToken(tokenString string) (string, error) {

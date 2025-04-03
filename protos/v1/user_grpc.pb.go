@@ -19,9 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AuthService_Signup_FullMethodName = "/types.AuthService/Signup"
-	AuthService_Login_FullMethodName  = "/types.AuthService/Login"
-	AuthService_Logout_FullMethodName = "/types.AuthService/Logout"
+	AuthService_Signup_FullMethodName = "/apex.auth.AuthService/Signup"
+	AuthService_Login_FullMethodName  = "/apex.auth.AuthService/Login"
+	AuthService_Logout_FullMethodName = "/apex.auth.AuthService/Logout"
 )
 
 // AuthServiceClient is the client API for AuthService service.
@@ -176,7 +176,7 @@ func _AuthService_Logout_Handler(srv interface{}, ctx context.Context, dec func(
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var AuthService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "types.AuthService",
+	ServiceName: "apex.auth.AuthService",
 	HandlerType: (*AuthServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{

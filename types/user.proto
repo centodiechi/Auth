@@ -7,7 +7,6 @@ service AuthService {
   rpc Signup(SignupRequest) returns (SignupResponse);
   rpc Login(LoginRequest) returns (LoginResponse);
   rpc Logout(LogoutRequest) returns (Empty);
-  rpc VerifyToken(VerifyTokenRequest) returns (VerifyTokenResponse);
 }
 
 message SignupRequest {
@@ -34,15 +33,6 @@ message LoginResponse {
 
 message LogoutRequest {
   string user_id = 1;
-}
-
-message VerifyTokenRequest {
-  string token = 1;
-}
-
-message VerifyTokenResponse {
-  bool valid = 1;
-  string user_id = 2;
 }
 
 message Empty {}
