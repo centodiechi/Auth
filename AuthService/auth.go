@@ -39,7 +39,12 @@ func (auth *AuthSvc) cacheUser(ctx context.Context, user *User) error {
 	}
 
 	key := fmt.Sprintf("user/%s", user.Email)
-	return auth.CacheClient.HSet(ctx, key, userData).Err()
+	pipe := auth.CacheClient.TxPipeline()
+	pipe.HSet(ctx, key, userData)
+	pipe.Expire(ctx, key, time.Hour)
+
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (auth *AuthSvc) getUserFromCache(ctx context.Context, email string) (*User, error) {

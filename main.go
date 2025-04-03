@@ -51,27 +51,27 @@ func initPostgres() {
 }
 
 func initRedis() {
-	CacheClient = redis.NewClient(&redis.Options{
+	SequenceClient = redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 		DB:   0,
 	})
 
-	_, err := CacheClient.Ping(context.Background()).Result()
+	_, err := SequenceClient.Ping(context.Background()).Result()
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to Redis Cache: %v", err)
+		log.Fatalf("❌ Failed to connect to Redis Sequence DB: %v", err)
 	}
-	log.Println("✅ Redis Cache (DB 0) connected successfully")
+	log.Println("✅ Redis Sequence DB (DB 0) connected successfully")
 
-	SequenceClient = redis.NewClient(&redis.Options{
+	CacheClient = redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 		DB:   1,
 	})
 
-	_, err = SequenceClient.Ping(context.Background()).Result()
+	_, err = CacheClient.Ping(context.Background()).Result()
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to Redis Sequence DB: %v", err)
+		log.Fatalf("❌ Failed to connect to Redis Cache: %v", err)
 	}
-	log.Println("✅ Redis Sequence DB (DB 1) connected successfully")
+	log.Println("✅ Redis Cache (DB 1) connected successfully")
 }
 
 func main() {
