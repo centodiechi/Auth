@@ -26,8 +26,9 @@ const (
 )
 
 var (
-	DB          *gorm.DB
-	RedisClient *redis.Client
+	DB             *gorm.DB
+	CacheClient    *redis.Client
+	SequenceClient *redis.Client
 )
 
 func init() {
@@ -50,22 +51,34 @@ func initPostgres() {
 }
 
 func initRedis() {
-	RedisClient = redis.NewClient(&redis.Options{
+	CacheClient = redis.NewClient(&redis.Options{
 		Addr: redisAddr,
+		DB:   0,
 	})
 
-	_, err := RedisClient.Ping(context.Background()).Result()
+	_, err := CacheClient.Ping(context.Background()).Result()
 	if err != nil {
-		log.Fatalf("❌ Failed to connect to Redis: %v", err)
+		log.Fatalf("❌ Failed to connect to Redis Cache: %v", err)
 	}
+	log.Println("✅ Redis Cache (DB 0) connected successfully")
 
-	log.Println("✅ Redis connected successfully")
+	SequenceClient = redis.NewClient(&redis.Options{
+		Addr: redisAddr,
+		DB:   1,
+	})
+
+	_, err = SequenceClient.Ping(context.Background()).Result()
+	if err != nil {
+		log.Fatalf("❌ Failed to connect to Redis Sequence DB: %v", err)
+	}
+	log.Println("✅ Redis Sequence DB (DB 1) connected successfully")
 }
 
 func main() {
 	authSvc := &authservice.AuthSvc{
 		DB:          DB,
-		RedisClient: RedisClient,
+		CacheClient: CacheClient,
+		SeqClient:   SequenceClient,
 	}
 
 	go startGRPCServer(authSvc)

@@ -25,12 +25,13 @@ type User struct {
 
 type AuthSvc struct {
 	apex.UnimplementedAuthServiceServer
-	RedisClient *redis.Client
+	CacheClient *redis.Client
+	SeqClient   *redis.Client
 	DB          *gorm.DB
 }
 
 func (auth *AuthSvc) cacheUser(ctx context.Context, user *User) error {
-	userData := map[string]interface{}{
+	userData := map[string]string{
 		"user_id":  user.UserID,
 		"name":     user.Name,
 		"email":    user.Email,
@@ -38,12 +39,12 @@ func (auth *AuthSvc) cacheUser(ctx context.Context, user *User) error {
 	}
 
 	key := fmt.Sprintf("user/%s", user.Email)
-	return auth.RedisClient.HSet(ctx, key, userData).Err()
+	return auth.CacheClient.HSet(ctx, key, userData).Err()
 }
 
 func (auth *AuthSvc) getUserFromCache(ctx context.Context, email string) (*User, error) {
 	key := fmt.Sprintf("user/%s", email)
-	userData, err := auth.RedisClient.HGetAll(ctx, key).Result()
+	userData, err := auth.CacheClient.HGetAll(ctx, key).Result()
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +128,7 @@ func (auth *AuthSvc) Logout(ctx context.Context, req *apex.LogoutRequest) (*apex
 }
 
 func (auth *AuthSvc) getNextHexID(ctx context.Context, key string) (string, error) {
-	nextID, err := auth.RedisClient.Incr(ctx, key).Result()
+	nextID, err := auth.SeqClient.Incr(ctx, key).Result()
 	if err != nil {
 		return "", err
 	}
