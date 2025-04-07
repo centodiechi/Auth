@@ -2,8 +2,6 @@ package authservice
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -12,15 +10,25 @@ import (
 	apex "github.com/centodiechi/Auth/protos/v1"
 
 	redis "github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
+type UserRole string
+
+const (
+	RoleUser  UserRole = "USER"
+	RoleAdmin UserRole = "ADMIN"
+)
+
 type User struct {
-	UserID    string `gorm:"primaryKey"`
-	Name      string
-	Email     string `gorm:"unique"`
-	Password  string
-	CreatedAt time.Time
+	UserID       string `gorm:"primaryKey"`
+	Name         string
+	Email        string `gorm:"unique"`
+	Password     string
+	Role         UserRole `gorm:"default:USER"`
+	CreatedAt    time.Time
+	RefreshToken string
 }
 
 type AuthSvc struct {
@@ -32,10 +40,12 @@ type AuthSvc struct {
 
 func (auth *AuthSvc) cacheUser(ctx context.Context, user *User) error {
 	userData := map[string]string{
-		"user_id":  user.UserID,
-		"name":     user.Name,
-		"email":    user.Email,
-		"password": user.Password,
+		"user_id":       user.UserID,
+		"name":          user.Name,
+		"email":         user.Email,
+		"password":      user.Password,
+		"role":          string(user.Role),
+		"refresh_token": user.RefreshToken,
 	}
 
 	key := fmt.Sprintf("user/%s", user.Email)
@@ -59,11 +69,26 @@ func (auth *AuthSvc) getUserFromCache(ctx context.Context, email string) (*User,
 	}
 
 	return &User{
-		UserID:   userData["user_id"],
-		Name:     userData["name"],
-		Email:    userData["email"],
-		Password: userData["password"],
+		UserID:       userData["user_id"],
+		Name:         userData["name"],
+		Email:        userData["email"],
+		Password:     userData["password"],
+		Role:         UserRole(userData["role"]),
+		RefreshToken: userData["refresh_token"],
 	}, nil
+}
+
+func hashPassword(password string) (string, error) {
+	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hashedBytes), nil
+}
+
+func comparePassword(hashedPassword, password string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+	return err == nil
 }
 
 func (auth *AuthSvc) Signup(ctx context.Context, req *apex.SignupRequest) (*apex.SignupResponse, error) {
@@ -80,9 +105,25 @@ func (auth *AuthSvc) Signup(ctx context.Context, req *apex.SignupRequest) (*apex
 		return nil, fmt.Errorf("error generating user ID: %w", err)
 	}
 
-	hashedPassword := hashPassword(req.Password)
+	hashedPassword, err := hashPassword(req.Password)
+	if err != nil {
+		return nil, fmt.Errorf("error hashing password: %w", err)
+	}
 
-	user := User{UserID: userID, Name: req.Name, Email: req.Email, Password: hashedPassword, CreatedAt: time.Now()}
+	role := RoleUser
+	if req.Role != "" {
+		role = UserRole(req.Role)
+	}
+
+	user := User{
+		UserID:    userID,
+		Name:      req.Name,
+		Email:     req.Email,
+		Password:  hashedPassword,
+		Role:      role,
+		CreatedAt: time.Now(),
+	}
+
 	if err := auth.DB.Create(&user).Error; err != nil {
 		return nil, fmt.Errorf("error inserting user: %w", err)
 	}
@@ -113,23 +154,76 @@ func (auth *AuthSvc) Login(ctx context.Context, req *apex.LoginRequest) (*apex.L
 		return nil, fmt.Errorf("cache error: %w", err)
 	}
 
-	if hashPassword(req.Password) != user.Password {
+	if !comparePassword(user.Password, req.Password) {
 		return nil, errors.New("invalid email or password")
 	}
 
-	accessToken, err := middleware.GenerateAccessToken(user.UserID)
+	accessToken, err := middleware.GenerateAccessToken(user.UserID, string(user.Role))
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
+	refreshToken, err := middleware.GenerateRefreshToken(user.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+	}
+
+	user.RefreshToken = refreshToken
+	if err := auth.DB.Save(user).Error; err != nil {
+		return nil, fmt.Errorf("failed to update refresh token: %w", err)
+	}
+
+	auth.cacheUser(ctx, user)
+
 	return &apex.LoginResponse{
-		UserId:      user.UserID,
-		AccessToken: accessToken,
+		UserId:       user.UserID,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
 	}, nil
 }
 
 func (auth *AuthSvc) Logout(ctx context.Context, req *apex.LogoutRequest) (*apex.Empty, error) {
+	var user User
+	if err := auth.DB.Where("user_id = ?", req.UserId).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &apex.Empty{}, nil
+		}
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+
+	user.RefreshToken = ""
+	if err := auth.DB.Save(&user).Error; err != nil {
+		return nil, fmt.Errorf("failed to invalidate refresh token: %w", err)
+	}
+
+	auth.cacheUser(ctx, &user)
+
 	return &apex.Empty{}, nil
+}
+
+func (auth *AuthSvc) RefreshToken(ctx context.Context, req *apex.RefreshTokenRequest) (*apex.RefreshTokenResponse, error) {
+	userID, err := middleware.VerifyRefreshToken(req.RefreshToken)
+	if err != nil {
+		return nil, errors.New("invalid refresh token")
+	}
+
+	var user User
+	if err := auth.DB.Where("user_id = ?", userID).First(&user).Error; err != nil {
+		return nil, errors.New("user not found")
+	}
+
+	if user.RefreshToken != req.RefreshToken {
+		return nil, errors.New("refresh token has been revoked")
+	}
+
+	accessToken, err := middleware.GenerateAccessToken(user.UserID, string(user.Role))
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate access token: %w", err)
+	}
+
+	return &apex.RefreshTokenResponse{
+		AccessToken: accessToken,
+	}, nil
 }
 
 func (auth *AuthSvc) getNextHexID(ctx context.Context, key string) (string, error) {
@@ -138,9 +232,4 @@ func (auth *AuthSvc) getNextHexID(ctx context.Context, key string) (string, erro
 		return "", err
 	}
 	return fmt.Sprintf("0x%x", nextID), nil
-}
-
-func hashPassword(password string) string {
-	hash := sha256.Sum256([]byte(password))
-	return hex.EncodeToString(hash[:])
 }

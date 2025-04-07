@@ -24,8 +24,16 @@ func (s *HTTPServer) Routes() http.Handler {
 
 	r.Post("/signup", s.SignupHandler)
 	r.Post("/login", s.LoginHandler)
+	r.Post("/refresh-token", s.RefreshTokenHandler)
+
 	r.With(middleware.JWTMiddleware).Post("/logout", s.LogoutHandler)
 	r.With(middleware.JWTMiddleware).Get("/verify", s.VerifyHandler)
+
+	r.Route("/admin", func(r chi.Router) {
+		r.Use(middleware.JWTMiddleware)
+		r.Use(middleware.RoleMiddleware("ADMIN"))
+	})
+
 	return r
 }
 
@@ -42,6 +50,7 @@ func (s *HTTPServer) SignupHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -58,6 +67,26 @@ func (s *HTTPServer) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    resp.AccessToken,
+		HttpOnly: true,
+		Path:     "/",
+		MaxAge:   1800,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    resp.RefreshToken,
+		HttpOnly: true,
+		Path:     "/refresh-token",
+		MaxAge:   604800,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -73,17 +102,91 @@ func (s *HTTPServer) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		HttpOnly: true,
+		Path:     "/",
+		MaxAge:   -1,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		HttpOnly: true,
+		Path:     "/refresh-token",
+		MaxAge:   -1,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode([]byte{})
+	json.NewEncoder(w).Encode(map[string]string{"message": "Successfully logged out"})
+}
+
+func (s *HTTPServer) RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
+	var refreshToken string
+
+	cookie, err := r.Cookie("refresh_token")
+	if err == nil {
+		refreshToken = cookie.Value
+	} else {
+		var req struct {
+			RefreshToken string `json:"refresh_token"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+
+		refreshToken = req.RefreshToken
+	}
+
+	if refreshToken == "" {
+		http.Error(w, "refresh token is required", http.StatusBadRequest)
+		return
+	}
+
+	resp, err := s.AuthService.RefreshToken(context.Background(), &apex.RefreshTokenRequest{
+		RefreshToken: refreshToken,
+	})
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    resp.AccessToken,
+		HttpOnly: true,
+		Path:     "/",
+		MaxAge:   1800,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"access_token": resp.AccessToken,
+	})
 }
 
 func (s *HTTPServer) VerifyHandler(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(middleware.UserIDKey).(string)
+	role := r.Context().Value(middleware.UserRoleKey).(string)
+
 	if userID == "" {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"valid": "true", "user_id": userID})
+	json.NewEncoder(w).Encode(map[string]string{
+		"valid":   "true",
+		"user_id": userID,
+		"role":    role,
+	})
 }

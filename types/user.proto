@@ -7,12 +7,14 @@ service AuthService {
   rpc Signup(SignupRequest) returns (SignupResponse);
   rpc Login(LoginRequest) returns (LoginResponse);
   rpc Logout(LogoutRequest) returns (Empty);
+  rpc RefreshToken(RefreshTokenRequest) returns (RefreshTokenResponse);
 }
 
 message SignupRequest {
   string name = 1;
   string email = 2;
   string password = 3;
+  string role = 4; 
 }
 
 message SignupResponse {
@@ -29,10 +31,20 @@ message LoginRequest {
 message LoginResponse {
   string user_id = 1;
   string access_token = 2;
+  string refresh_token = 3;
+  string role = 4;
 }
 
 message LogoutRequest {
   string user_id = 1;
+}
+
+message RefreshTokenRequest {
+  string refresh_token = 1;
+}
+
+message RefreshTokenResponse {
+  string access_token = 1;
 }
 
 message Empty {}
