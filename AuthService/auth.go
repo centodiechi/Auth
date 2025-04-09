@@ -100,7 +100,7 @@ func (auth *AuthSvc) Signup(ctx context.Context, req *apex.SignupRequest) (*apex
 		return nil, fmt.Errorf("error checking existing user: %w", result.Error)
 	}
 
-	userID, err := auth.getNextHexID(ctx, "user_id_seq")
+	userID, err := auth.GetNextHexID(ctx, "user_id_seq")
 	if err != nil {
 		return nil, fmt.Errorf("error generating user ID: %w", err)
 	}
@@ -226,7 +226,7 @@ func (auth *AuthSvc) RefreshToken(ctx context.Context, req *apex.RefreshTokenReq
 	}, nil
 }
 
-func (auth *AuthSvc) getNextHexID(ctx context.Context, key string) (string, error) {
+func (auth *AuthSvc) GetNextHexID(ctx context.Context, key string) (string, error) {
 	nextID, err := auth.SeqClient.Incr(ctx, key).Result()
 	if err != nil {
 		return "", err
