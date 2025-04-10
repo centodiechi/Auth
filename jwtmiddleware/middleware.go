@@ -10,6 +10,8 @@ import (
 
 	"encoding/base64"
 
+	"slices"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -21,6 +23,17 @@ type userRole string
 
 const UserIDKey userID = "user_id"
 const UserRoleKey userRole = "user_role"
+
+type AccessTokenClaims struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+	jwt.RegisteredClaims
+}
+
+type RefreshTokenClaims struct {
+	UserID string `json:"user_id"`
+	jwt.RegisteredClaims
+}
 
 func GenerateAccessToken(userID string, role string) (string, error) {
 	claims := jwt.MapClaims{
@@ -65,7 +78,8 @@ func ExtractTokenFromHeader(r *http.Request) string {
 }
 
 func VerifyToken(tokenString string) (string, string, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	claims := &AccessTokenClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
@@ -76,26 +90,21 @@ func VerifyToken(tokenString string) (string, string, error) {
 		return "", "", errors.New("invalid token")
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", "", errors.New("invalid token claims")
-	}
-
-	userID, ok := claims["user_id"].(string)
-	if !ok {
+	if claims.UserID == "" {
 		return "", "", errors.New("invalid user_id in token")
 	}
 
-	role, ok := claims["role"].(string)
-	if !ok {
-		return "", "USER", nil
+	role := claims.Role
+	if role == "" {
+		role = "USER"
 	}
 
-	return userID, role, nil
+	return claims.UserID, role, nil
 }
 
 func VerifyRefreshToken(tokenString string) (string, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	claims := &RefreshTokenClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method")
 		}
@@ -106,17 +115,11 @@ func VerifyRefreshToken(tokenString string) (string, error) {
 		return "", errors.New("invalid refresh token")
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", errors.New("invalid token claims")
-	}
-
-	userID, ok := claims["user_id"].(string)
-	if !ok {
+	if claims.UserID == "" {
 		return "", errors.New("invalid user_id in token")
 	}
 
-	return userID, nil
+	return claims.UserID, nil
 }
 
 func JWTMiddleware(next http.Handler) http.Handler {
@@ -148,13 +151,7 @@ func RoleMiddleware(roles ...string) func(http.Handler) http.Handler {
 				return
 			}
 
-			hasRole := false
-			for _, allowedRole := range roles {
-				if role == allowedRole {
-					hasRole = true
-					break
-				}
-			}
+			hasRole := slices.Contains(roles, role)
 
 			if !hasRole {
 				http.Error(w, "forbidden: insufficient privileges", http.StatusForbidden)

@@ -67,26 +67,6 @@ func (s *HTTPServer) LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "access_token",
-		Value:    resp.AccessToken,
-		HttpOnly: true,
-		Path:     "/",
-		MaxAge:   1800,
-		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil,
-	})
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
-		Value:    resp.RefreshToken,
-		HttpOnly: true,
-		Path:     "/refresh-token",
-		MaxAge:   604800,
-		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil,
-	})
-
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -102,26 +82,6 @@ func (s *HTTPServer) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "access_token",
-		Value:    "",
-		HttpOnly: true,
-		Path:     "/",
-		MaxAge:   -1,
-		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil,
-	})
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "refresh_token",
-		Value:    "",
-		HttpOnly: true,
-		Path:     "/refresh-token",
-		MaxAge:   -1,
-		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil,
-	})
-
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Successfully logged out"})
 }
@@ -129,21 +89,16 @@ func (s *HTTPServer) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 func (s *HTTPServer) RefreshTokenHandler(w http.ResponseWriter, r *http.Request) {
 	var refreshToken string
 
-	cookie, err := r.Cookie("refresh_token")
-	if err == nil {
-		refreshToken = cookie.Value
-	} else {
-		var req struct {
-			RefreshToken string `json:"refresh_token"`
-		}
-
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid request", http.StatusBadRequest)
-			return
-		}
-
-		refreshToken = req.RefreshToken
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
 	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	refreshToken = req.RefreshToken
 
 	if refreshToken == "" {
 		http.Error(w, "refresh token is required", http.StatusBadRequest)
@@ -158,16 +113,6 @@ func (s *HTTPServer) RefreshTokenHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "access_token",
-		Value:    resp.AccessToken,
-		HttpOnly: true,
-		Path:     "/",
-		MaxAge:   1800,
-		SameSite: http.SameSiteStrictMode,
-		Secure:   r.TLS != nil,
-	})
 
 	json.NewEncoder(w).Encode(map[string]string{
 		"access_token": resp.AccessToken,
